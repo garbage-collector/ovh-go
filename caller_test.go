@@ -1,9 +1,6 @@
 package govh
 
-import (
-	"errors"
-	"testing"
-)
+import "testing"
 
 var caller *Caller
 
@@ -51,15 +48,10 @@ func TestCallApi(t *testing.T) {
 
 	me := &Me{}
 
-	uncastMe, err := caller.CallApi("/me", "GET", nil, me)
+	err := caller.CallApi("/me", "GET", nil, me)
 
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	me, ok := uncastMe.(*Me)
-	if !ok {
-		t.Fatal(errors.New("Invalid type received from CallApi"))
 	}
 
 	t.Log(me.Firstname, me.Name)
