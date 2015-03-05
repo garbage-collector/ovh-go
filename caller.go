@@ -18,8 +18,9 @@ import (
 
 var (
 	ApiUrl = map[string]string{
-		"ovh-eu": "https://api.ovh.com/1.0",
-		"ovh-ca": "https://ca.api.ovh.com/1.0",
+		"ovh-eu":   "https://api.ovh.com/1.0",
+		"ovh-ca":   "https://ca.api.ovh.com/1.0",
+		"runabove": "https://api.runabove.com/1.0",
 	}
 )
 
@@ -186,20 +187,20 @@ func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, err
 // CallApi makes a new call to the OVH API
 // ApplicationKey, ApplicationSecret and ConsumerKey must be set on Caller
 // Returns the unmarshal json object or error if any occured
-func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) (interface{}, error) {
+func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) error {
 	var params []byte
 	if body != nil {
 		var err error
 		params, err = json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	completeUrl := fmt.Sprintf("%s%s", caller.Url, url)
 	request, err := http.NewRequest(method, completeUrl, bytes.NewReader(params))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	timestamp := int(time.Now().Unix()) + caller.delay
@@ -213,33 +214,34 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer result.Body.Close()
 
 	resBody, err := ioutil.ReadAll(result.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if result.StatusCode >= 200 && result.StatusCode < 300 {
 		if len(resBody) > 0 && typeResult != nil {
 			err := json.Unmarshal(resBody, &typeResult)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 
-		return typeResult, nil
+		return nil
 	}
 
 	apiError := new(ApiOvhError)
 	err = json.Unmarshal(resBody, apiError)
 	if err != nil {
+		return err
 	}
 
 	apiError.Code = result.StatusCode
-	return nil, apiError
+	return apiError
 }
 
 func (caller *Caller) getSignature(method, url, body string, apiTime int) string {
