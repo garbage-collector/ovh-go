@@ -137,36 +137,36 @@ type AccessRule struct {
 // GetConsumerKey ask OVH API for a new consumerKey
 // Store the received consumerKey in Caller
 // Consumer key will be defined by the given parameters
-func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, error) {
+func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, *ApiOvhError) {
 
 	params, err := json.Marshal(ckParams)
 	if err != nil {
-		return nil, err
+		return nil, NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	request, err := http.NewRequest("POST", fmt.Sprintf("%s/auth/credential", caller.Url), bytes.NewReader(params))
 	if err != nil {
-		return nil, err
+		return nil, NewError(err.Error(), http.StatusInternalServerError)
 	}
 	request.Header.Add("Content-Type", "application/json")
 	request.Header.Add("X-OVH-Application", caller.ApplicationKey)
 
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, NewError(err.Error(), http.StatusInternalServerError)
 	}
 	defer result.Body.Close()
 
 	body, err := ioutil.ReadAll(result.Body)
 	if err != nil {
-		return nil, err
+		return nil, NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	if result.StatusCode == 200 {
 		askCK := new(GetCKResponse)
 		err := json.Unmarshal(body, askCK)
 		if err != nil {
-			return nil, err
+			return nil, NewError(err.Error(), http.StatusInternalServerError)
 		}
 
 		caller.ConsumerKey = askCK.ConsumerKey
@@ -177,7 +177,7 @@ func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, err
 	apiError := new(ApiOvhError)
 	err = json.Unmarshal(body, apiError)
 	if err != nil {
-		return nil, err
+		return nil, NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	apiError.Code = result.StatusCode
@@ -187,20 +187,20 @@ func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, err
 // CallApi makes a new call to the OVH API
 // ApplicationKey, ApplicationSecret and ConsumerKey must be set on Caller
 // Returns the unmarshal json object or error if any occured
-func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) error {
+func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) *ApiOvhError {
 	var params []byte
 	if body != nil {
 		var err error
 		params, err = json.Marshal(body)
 		if err != nil {
-			return err
+			return NewError(err.Error(), http.StatusInternalServerError)
 		}
 	}
 
 	completeUrl := fmt.Sprintf("%s%s", caller.Url, url)
 	request, err := http.NewRequest(method, completeUrl, bytes.NewReader(params))
 	if err != nil {
-		return err
+		return NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	timestamp := int(time.Now().Unix()) + caller.delay
@@ -214,20 +214,20 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return err
+		return NewError(err.Error(), http.StatusInternalServerError)
 	}
 	defer result.Body.Close()
 
 	resBody, err := ioutil.ReadAll(result.Body)
 	if err != nil {
-		return err
+		return NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	if result.StatusCode >= 200 && result.StatusCode < 300 {
 		if len(resBody) > 0 && typeResult != nil {
 			err := json.Unmarshal(resBody, &typeResult)
 			if err != nil {
-				return err
+				return NewError(err.Error(), http.StatusInternalServerError)
 			}
 		}
 
@@ -237,7 +237,7 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 	apiError := new(ApiOvhError)
 	err = json.Unmarshal(resBody, apiError)
 	if err != nil {
-		return err
+		return NewError(err.Error(), http.StatusInternalServerError)
 	}
 
 	apiError.Code = result.StatusCode
