@@ -17,3 +17,10 @@ type ApiOvhError struct {
 func (err *ApiOvhError) Error() string {
 	return fmt.Sprintf("Error %d : %s", err.Code, err.Message)
 }
+
+func NewError(message string, code int) *ApiOvhError {
+	return &ApiOvhError{
+		Message: message,
+		Code:    code,
+	}
+}
