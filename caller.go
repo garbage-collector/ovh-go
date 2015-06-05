@@ -137,7 +137,7 @@ type AccessRule struct {
 // GetConsumerKey ask OVH API for a new consumerKey
 // Store the received consumerKey in Caller
 // Consumer key will be defined by the given parameters
-func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, error) {
+func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, *ApiOvhError) {
 
 	params, err := json.Marshal(ckParams)
 	if err != nil {
@@ -187,7 +187,7 @@ func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, err
 // CallApi makes a new call to the OVH API
 // ApplicationKey, ApplicationSecret and ConsumerKey must be set on Caller
 // Returns the unmarshal json object or error if any occured
-func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) error {
+func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) *ApiOvhError {
 	var params []byte
 	if body != nil {
 		var err error
