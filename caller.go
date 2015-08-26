@@ -7,22 +7,21 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
-var (
-	ApiUrl = map[string]string{
-		"ovh-eu":   "https://api.ovh.com/1.0",
-		"ovh-ca":   "https://ca.api.ovh.com/1.0",
-		"runabove": "https://api.runabove.com/1.0",
-	}
-)
+// API URLs
+var APIURL = map[string]string{
+	"ovh-eu":   "https://api.ovh.com/1.0",
+	"ovh-ca":   "https://ca.api.ovh.com/1.0",
+	"runabove": "https://api.runabove.com/1.0",
+}
 
 // Caller is a struct representing a caller to OVH API.
 type Caller struct {
@@ -33,87 +32,89 @@ type Caller struct {
 	// A consumer key represent a third-legs key, matching your application, an OVH user, and a scope.
 	ConsumerKey string
 	// OVH API Url.
-	Url string
-
-	delay int
+	URL string
+	// Time lag between the caller's clock and the OVH API
+	delay time.Duration
 }
 
-// NewCaller create a new caller.
+// NewCaller creates a new caller.
 // It also call Time() to get difference between OVH API time and local time
 func NewCaller(endpoint, applicationKey, applicationSecret, consumerKey string) (*Caller, error) {
-
-	url := ApiUrl[endpoint]
-	if url == "" {
-		return nil, errors.New(fmt.Sprintf("Invalid endpoint %s", endpoint))
+	url, ok := APIURL[endpoint]
+	if !ok {
+		return nil, fmt.Errorf("Invalid endpoint %q", endpoint)
 	}
 
 	caller := &Caller{
 		ApplicationKey:    applicationKey,
 		ApplicationSecret: applicationSecret,
 		ConsumerKey:       consumerKey,
-		Url:               url,
+		URL:               url,
 	}
 
-	currentTime := time.Now().Unix()
 	ovhTime, err := caller.Time()
 	if err != nil {
 		return nil, err
 	}
 
-	caller.delay = ovhTime - int(currentTime)
+	caller.delay = time.Since(*ovhTime)
 
 	return caller, nil
 }
 
-// Ping perform a ping to OVH API.
+// Ping performs a ping to OVH API.
 // In fact, ping is just a /auth/time call, in order to check if API is up.
 func (caller *Caller) Ping() error {
 	_, err := caller.Time()
 	return err
 }
 
-// Get time from OVH API, by asking GET /auth/time.
+// Time returns time from the OVH API, by asking GET /auth/time.
 // Time is used to sign requests and to make all calls to API.
-func (caller *Caller) Time() (int, error) {
-	request, err := http.NewRequest("GET", fmt.Sprintf("%s/auth/time", caller.Url), nil)
+func (caller *Caller) Time() (*time.Time, error) {
+	request, err := http.NewRequest("GET", fmt.Sprintf("%s/auth/time", caller.URL), nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+	request.Header.Add("Content-Type", "application/json")
 
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer result.Body.Close()
 
 	body, err := ioutil.ReadAll(result.Body)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	if result.StatusCode != 200 {
-		return 0, errors.New(fmt.Sprintf("API seems down, HTTP response: %d", result.StatusCode))
+	if result.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API seems down, HTTP response: %d", result.StatusCode)
 	}
 
-	apiTime, err := strconv.Atoi(fmt.Sprintf("%s", body))
+	ts, err := strconv.Atoi(string(body))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return apiTime, nil
+	t := time.Unix(int64(ts), 0)
+
+	return &t, nil
 }
 
-// Response when asking a new consumerKey.
+// GetCKResponse represents the response when asking a new consumerKey.
 type GetCKResponse struct {
 	// Consumer key, which need to be validated by customer.
 	ConsumerKey string
 	// Current status, should be always "pendingValidation".
 	Status string
 	// URL to redirect user in order to log in.
-	ValidationUrl string
+	ValidationURL string
 }
 
-// Parameters to fill in order to ask a new consumerKey.
+// GetCKParams represents the parameters to fill in order to ask a new
+// consumerKey.
 type GetCKParams struct {
 	// Scope for the new consumerKey.
 	AccessRules []*AccessRule `json:"accessRules"`
@@ -122,6 +123,7 @@ type GetCKParams struct {
 	Redirection string `json:"redirection"`
 }
 
+// AccessRule represents a method allowed for a path
 type AccessRule struct {
 	// Allowed HTTP Method for the requested AccessRule.
 	// Can be set to GET/POST/PUT/DELETE.
@@ -134,17 +136,16 @@ type AccessRule struct {
 	Path string `json:"path"`
 }
 
-// GetConsumerKey ask OVH API for a new consumerKey
+// GetConsumerKey asks OVH API for a new consumerKey
 // Store the received consumerKey in Caller
 // Consumer key will be defined by the given parameters
 func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, error) {
-
 	params, err := json.Marshal(ckParams)
 	if err != nil {
 		return nil, err
 	}
 
-	request, err := http.NewRequest("POST", fmt.Sprintf("%s/auth/credential", caller.Url), bytes.NewReader(params))
+	request, err := http.NewRequest("POST", fmt.Sprintf("%s/auth/credential", caller.URL), bytes.NewReader(params))
 	if err != nil {
 		return nil, err
 	}
@@ -174,20 +175,18 @@ func (caller *Caller) GetConsumerKey(ckParams *GetCKParams) (*GetCKResponse, err
 		return askCK, nil
 	}
 
-	apiError := new(ApiOvhError)
-	err = json.Unmarshal(body, apiError)
-	if err != nil {
+	apiError := &ApiOvhError{Code: result.StatusCode}
+	if err = json.Unmarshal(body, apiError); err != nil {
 		return nil, err
 	}
 
-	apiError.Code = result.StatusCode
 	return nil, apiError
 }
 
-// CallApi makes a new call to the OVH API
+// CallAPI makes a new call to the OVH API
 // ApplicationKey, ApplicationSecret and ConsumerKey must be set on Caller
 // Returns the unmarshal json object or error if any occured
-func (caller *Caller) CallApi(url, method string, body interface{}, typeResult interface{}) error {
+func (caller *Caller) CallAPI(url, method string, body interface{}, typeResult interface{}) error {
 	var params []byte
 	if body != nil {
 		var err error
@@ -197,20 +196,24 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 		}
 	}
 
-	completeUrl := fmt.Sprintf("%s%s", caller.Url, url)
-	request, err := http.NewRequest(method, completeUrl, bytes.NewReader(params))
+	completeURL := caller.URL + url
+	request, err := http.NewRequest(method, completeURL, bytes.NewReader(params))
 	if err != nil {
 		return err
 	}
 
-	timestamp := int(time.Now().Unix()) + caller.delay
+	timestamp := time.Now().Add(caller.delay).Unix()
 
-	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("X-Ovh-Timestamp", fmt.Sprintf("%d", timestamp))
-	request.Header.Add("X-Ovh-Application", caller.ApplicationKey)
-	request.Header.Add("X-Ovh-Consumer", caller.ConsumerKey)
-	signature := caller.getSignature(method, completeUrl, fmt.Sprintf("%s", params), timestamp)
-	request.Header.Add("X-Ovh-Signature", signature)
+	sig := caller.getSignature(method, completeURL, string(params), timestamp)
+	for h, v := range map[string]string{
+		"Content-Type":      "application/json",
+		"X-Ovh-Timestamp":   strconv.FormatInt(timestamp, 10),
+		"X-Ovh-Application": caller.ApplicationKey,
+		"X-Ovh-Consumer":    caller.ConsumerKey,
+		"X-Ovh-Signature":   sig,
+	} {
+		request.Header.Add(h, v)
+	}
 
 	result, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -223,10 +226,10 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 		return err
 	}
 
-	if result.StatusCode >= 200 && result.StatusCode < 300 {
+	// >= 200 && < 300
+	if result.StatusCode >= http.StatusOK && result.StatusCode < http.StatusMultipleChoices {
 		if len(resBody) > 0 && typeResult != nil {
-			err := json.Unmarshal(resBody, &typeResult)
-			if err != nil {
+			if err := json.Unmarshal(resBody, &typeResult); err != nil {
 				return err
 			}
 		}
@@ -234,19 +237,24 @@ func (caller *Caller) CallApi(url, method string, body interface{}, typeResult i
 		return nil
 	}
 
-	apiError := new(ApiOvhError)
-	err = json.Unmarshal(resBody, apiError)
-	if err != nil {
+	apiError := &ApiOvhError{Code: result.StatusCode}
+	if err = json.Unmarshal(resBody, apiError); err != nil {
 		return err
 	}
 
-	apiError.Code = result.StatusCode
 	return apiError
 }
 
-func (caller *Caller) getSignature(method, url, body string, apiTime int) string {
+func (caller *Caller) getSignature(method, url, body string, timestamp int64) string {
 	h := sha1.New()
-	sig := fmt.Sprintf("%s+%s+%s+%s+%s+%d", caller.ApplicationSecret, caller.ConsumerKey, method, url, body, apiTime)
+	sig := strings.Join([]string{
+		caller.ApplicationSecret,
+		caller.ConsumerKey,
+		method,
+		url,
+		body,
+		strconv.FormatInt(timestamp, 10),
+	}, "+")
 	io.WriteString(h, sig)
 	return "$1$" + hex.EncodeToString(h.Sum(nil))
 }
