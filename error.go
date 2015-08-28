@@ -1,10 +1,8 @@
 package govh
 
-import (
-	"fmt"
-)
+import "fmt"
 
-// ApiOvhError is a struct representing an error that can occured while calling API.
+// ApiOvhError represents an error that can occured while calling the API.
 type ApiOvhError struct {
 	// Error message.
 	Message string
@@ -15,5 +13,5 @@ type ApiOvhError struct {
 }
 
 func (err *ApiOvhError) Error() string {
-	return fmt.Sprintf("Error %d : %s", err.Code, err.Message)
+	return fmt.Sprintf("Error %d : %q", err.Code, err.Message)
 }
