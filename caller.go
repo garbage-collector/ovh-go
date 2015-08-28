@@ -106,11 +106,11 @@ func (caller *Caller) Time() (*time.Time, error) {
 // GetCKResponse represents the response when asking a new consumerKey.
 type GetCKResponse struct {
 	// Consumer key, which need to be validated by customer.
-	ConsumerKey string
+	ConsumerKey string `json:"consumerKey"`
 	// Current status, should be always "pendingValidation".
-	Status string
+	Status string `json:"state"`
 	// URL to redirect user in order to log in.
-	ValidationURL string
+	ValidationURL string `json:"validationUrl"`
 }
 
 // GetCKParams represents the parameters to fill in order to ask a new
